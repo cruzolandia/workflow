@@ -1,334 +1,119 @@
-<!doctype html>
-<html lang="pt-br">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Workflow Priorizer</title>
-    <meta name="description" content="Cole ou carregue sua planilha e veja as tarefas priorizadas por prazo e complexidade." />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2218%22 fill=%22black%22/><text x=%2250%22 y=%2258%22 font-size=%2256%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22Arial,%20sans-serif%22>W</text></svg>">
-    <style>
-      .prose ul { list-style: disc; margin-left: 1rem; }
-      .prose ol { list-style: decimal; margin-left: 1rem; }
-    </style>
-  </head>
-  <body class="min-h-screen bg-gray-50">
-    <div id="root"></div>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Priorizador de Fluxo de Trabalho</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background: #f9f9f9; }
+    h1 { color: #333; }
+    .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    input, button, textarea { margin: 10px 0; padding: 8px; width: 100%; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    th { background: #f0f0f0; }
+    .high { background: #ffcccc; }
+    .medium { background: #fff3cd; }
+    .low { background: #d4edda; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📊 Priorizar Tarefas</h1>
+    <p>Cole dados do Google Sheets ou faça upload de um arquivo CSV.</p>
 
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <label for="csvInput">Upload CSV:</label>
+    <input type="file" id="csvInput" accept=".csv" />
 
-    <script type="text/babel">
-      const { useState, useMemo, useRef } = React;
+    <label for="pasteData">Ou cole os dados aqui (colunas: Tarefa, Prazo, Complexidade):</label>
+    <textarea id="pasteData" rows="6" placeholder="Exemplo:
+Tarefa A,2025-09-20,Alta
+Tarefa B,2025-09-25,Média
+Tarefa C,2025-10-01,Baixa"></textarea>
 
-      function App() {
-        const [rows, setRows] = useState([]);
-        const [headers, setHeaders] = useState([]);
-        const [mapping, setMapping] = useState({ title: "", due: "", complexity: "", status: "" });
-        const [weights, setWeights] = useState({ prazo: 0.6, complexidade: 0.4 });
-        const [url, setUrl] = useState("");
-        const fileRef = useRef(null);
+    <button onclick="processData()">Processar</button>
 
-        function parseText(text) {
-          const lines = text.trim().split(/\r?\n/);
-          if (!lines.length) return [];
-          const sep = chooseSeparator(lines[0]);
-          const rows = lines.map((line) => splitLine(line, sep));
-          return rows;
-        }
-        function chooseSeparator(firstLine) {
-          const tabs = (firstLine.match(/\t/g) || []).length;
-          const commas = (firstLine.match(/,/g) || []).length;
-          return tabs > commas ? "\t" : ",";
-        }
-        function splitLine(line, sep) {
-          if (sep === "\t") return line.split("\t");
-          const result = [];
-          let current = "";
-          let inQuotes = false;
-          for (let i = 0; i < line.length; i++) {
-            const ch = line[i];
-            if (ch === '"') {
-              if (inQuotes && line[i + 1] === '"') { current += '"'; i++; } else { inQuotes = !inQuotes; }
-            } else if (ch === "," && !inQuotes) {
-              result.push(current); current = "";
-            } else {
-              current += ch;
-            }
-          }
-          result.push(current);
-          return result;
-        }
-        function handlePaste(e) {
-          const text = e.clipboardData.getData("text/plain");
-          const parsed = parseText(text);
-          if (!parsed.length) return;
-          setHeaders(parsed[0]);
-          setRows(parsed.slice(1).map((r) => Object.fromEntries(parsed[0].map((h, i) => [h, (r[i] ?? "").trim()]))));
-          autoMap(parsed[0]);
-        }
-        function autoMap(hs) {
-          const lower = hs.map((h) => h.toLowerCase());
-          const guess = (keys) => {
-            for (const k of keys) {
-              const idx = lower.findIndex((h) => h.includes(k));
-              if (idx !== -1) return hs[idx];
-            }
-            return "";
-          };
-          setMapping({
-            title: guess(["tarefa","task","titulo","title","atividade","nome"]),
-            due: guess(["prazo","venc","due","deadline","data","entrega"]),
-            complexity: guess(["complex","dific","peso","score","pontos","nível","nivel"]),
-            status: guess(["status","situacao","situação","andamento","feito","done"]) || ""
-          });
-        }
-        function handleFile(e) {
-          const file = e.target.files?.[0];
-          if (!file) return;
-          const reader = new FileReader();
-          reader.onload = (ev) => {
-            const text = String(ev.target?.result || "");
-            const parsed = parseText(text);
-            if (!parsed.length) return;
-            setHeaders(parsed[0]);
-            setRows(parsed.slice(1).map((r) => Object.fromEntries(parsed[0].map((h, i) => [h, (r[i] ?? "").trim()]))));
-            autoMap(parsed[0]);
-          };
-          reader.readAsText(file);
-        }
-        async function fetchFromUrl() {
-          if (!url) return;
-          try {
-            const res = await fetch(url);
-            const text = await res.text();
-            const parsed = parseText(text);
-            if (!parsed.length) return;
-            setHeaders(parsed[0]);
-            setRows(parsed.slice(1).map((r) => Object.fromEntries(parsed[0].map((h, i) => [h, (r[i] ?? "").trim()]))));
-            autoMap(parsed[0]);
-          } catch (e) {
-            alert("Não consegui baixar esse link. Verifique se está público e no formato CSV.");
-          }
-        }
-        const prioritized = useMemo(() => {
-          if (!rows.length || !mapping.title || !mapping.due || !mapping.complexity) return [];
-          const startOfDay = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
-          const toNumber = (v) => { const n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? 0 : n; };
-          const normClamp = (v, min=1, max=5) => { const n = Math.max(min, Math.min(max, v||0)); return (n - min) / (max - min); };
-          const parseAnyDate = (s) => {
-            if (!s) return null;
-            const trimmed = s.trim();
-            if (/^\d+(\.\d+)?$/.test(trimmed)) {
-              const serial = parseFloat(trimmed);
-              const excelEpoch = new Date(1899, 11, 30);
-              const ms = excelEpoch.getTime() + serial * 86400000;
-              return new Date(ms);
-            }
-            const m1 = trimmed.match(/^([0-3]?\d)[\/-]([0-1]?\d)[\/-](\d{2,4})$/);
-            if (m1) {
-              const d = parseInt(m1[1]); const m = parseInt(m1[2]) - 1; const y = parseInt(m1[3].length === 2 ? "20"+m1[3] : m1[3]);
-              return new Date(y, m, d);
-            }
-            const d = new Date(trimmed);
-            if (!isNaN(d.getTime())) return d;
-            return null;
-          };
-          const deadlineUrgency = (days) => {
-            if (days == null) return 0.2;
-            if (days <= 0) return 1;
-            if (days <= 3) return 0.85;
-            if (days <= 7) return 0.6;
-            if (days <= 14) return 0.4;
-            if (days <= 30) return 0.25;
-            return 0.1;
-          };
-          const scoreToLabel = (score) => score >= 0.75 ? "Crítica" : score >= 0.55 ? "Alta" : score >= 0.35 ? "Média" : "Baixa";
+    <table id="resultTable">
+      <thead>
+        <tr>
+          <th>Tarefa</th>
+          <th>Prazo</th>
+          <th>Complexidade</th>
+          <th>Prioridade</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
-          return rows.map((r) => {
-            const title = r[mapping.title] || "(sem título)";
-            const dueStr = r[mapping.due] || "";
-            const compStr = r[mapping.complexity] || "";
-            const status = mapping.status ? (r[mapping.status] || "") : "";
-            const due = parseAnyDate(dueStr);
-            const daysLeft = isFinite(due?.getTime?.()) ? Math.ceil((due - startOfDay(new Date())) / 86400000) : null;
-            const comp = toNumber(compStr);
-            const compNorm = normClamp(comp, 1, 5);
-            const urg = deadlineUrgency(daysLeft);
-            const compScore = compNorm;
-            const score = weights.prazo * urg + weights.complexidade * compScore;
-            const label = scoreToLabel(score);
-            return { title, due, dueStr, daysLeft, comp, status, score, label };
-          }).sort((a,b) => b.score - a.score);
-        }, [rows, mapping, weights]);
+  <script>
+    function parseCSV(text) {
+      return text.trim().split("\n").map(line => line.split(","));
+    }
 
-        function downloadCSV() {
-          if (!prioritized.length) return;
-          const cols = ["Prioridade","Score","DiasRestantes","Prazo","Complexidade","Título", ...(mapping.status? ["Status"]:[])];
-          const lines = [cols.join(",")];
-          const csvEscape = (s) => {
-            if (s == null) return "";
-            const str = String(s);
-            return /[",\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
-          };
-          prioritized.forEach((r) => {
-            const row = [
-              r.label,
-              r.score.toFixed(2),
-              r.daysLeft ?? "",
-              r.due ? r.due.toISOString().slice(0,10) : r.dueStr,
-              r.comp,
-              csvEscape(r.title),
-              ...(mapping.status ? [csvEscape(r.status)] : [])
-            ];
-            lines.push(row.join(","));
-          });
-          const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-          const a = document.createElement("a");
-          a.href = URL.createObjectURL(blob);
-          a.download = "prioridades.csv";
-          a.click();
-        }
+    function calcularPrioridade(prazo, complexidade) {
+      const hoje = new Date();
+      const prazoDate = new Date(prazo);
+      const diasRestantes = Math.ceil((prazoDate - hoje) / (1000*60*60*24));
 
-        const Badge = ({ level }) => {
-          const color = level==="Crítica" ? "bg-red-600" : level==="Alta" ? "bg-orange-500" : level==="Média" ? "bg-amber-400" : "bg-gray-400";
-          return <span className={"text-xs text-white px-2 py-1 rounded-lg " + color}>{level}</span>;
-        };
+      let score = 0;
+      if (diasRestantes <= 3) score += 2;
+      else if (diasRestantes <= 7) score += 1;
 
-        const Field = ({ label, value, onChange, options }) => (
-          <label className="text-sm grid gap-1">
-            <span className="text-gray-700">{label}</span>
-            <select value={value} onChange={(e)=>onChange(e.target.value)} className="px-3 py-2 rounded-xl border">
-              {options.map((o,i)=>(<option key={i} value={o}>{o}</option>))}
-            </select>
-          </label>
-        );
+      if (complexidade.toLowerCase().includes("alta")) score += 2;
+      else if (complexidade.toLowerCase().includes("média")) score += 1;
 
-        return (
-          <div>
-            <header className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b">
-              <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-black text-white grid place-items-center font-bold">W</div>
-                  <h1 className="text-xl font-semibold">Workflow Priorizer</h1>
-                </div>
-                <div className="text-xs text-gray-500">Tudo no seu navegador</div>
-              </div>
-            </header>
+      if (score >= 3) return "Alta";
+      if (score == 2) return "Média";
+      return "Baixa";
+    }
 
-            <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-              <div className="p-4 rounded-2xl border bg-white shadow-sm">
-                <div className="mb-3">
-                  <h3 className="text-base font-semibold">Como usar (bem simples)</h3>
-                  <p className="text-sm text-gray-600">Tenha colunas: <b>Tarefa</b>, <b>Prazo</b> (data) e <b>Complexidade</b> (1–5). Status é opcional.</p>
-                  <ol className="list-decimal ml-5 text-sm text-gray-700 space-y-1 mt-2">
-                    <li>Cole linhas do Google Sheets aqui embaixo (Ctrl/Cmd+V),</li>
-                    <li>ou faça upload de um CSV,</li>
-                    <li>ou cole um link público de CSV do Sheets.</li>
-                  </ol>
-                </div>
-                <div className="grid lg:grid-cols-3 gap-4">
-                  <div>
-                    <div className="text-sm font-medium mb-1">Cole aqui (Ctrl/Cmd+V)</div>
-                    <textarea onPaste={handlePaste} placeholder="Cole os dados da sua planilha aqui…" className="w-full h-32 p-3 border rounded-xl outline-none focus:ring-2"></textarea>
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium mb-1">Upload CSV</div>
-                    <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={handleFile} className="block w-full text-sm" />
-                    <button onClick={()=>fileRef.current?.click()} className="mt-3 px-3 py-2 rounded-lg border">Escolher arquivo</button>
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium mb-1">Link do Sheets (CSV público)</div>
-                    <div className="flex gap-2">
-                      <input value={url} onChange={(e)=>setUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/.../export?format=csv" className="flex-1 px-3 py-2 rounded-xl border outline-none focus:ring-2" />
-                      <button onClick={fetchFromUrl} className="px-3 py-2 rounded-xl border">Carregar</button>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">Dica: Arquivo → Compartilhar → Publicar na web → CSV (ou use <code>export?format=csv</code>).</p>
-                  </div>
-                </div>
-              </div>
+    function processData() {
+      const tableBody = document.querySelector("#resultTable tbody");
+      tableBody.innerHTML = "";
 
-              {headers.length > 0 && (
-                <div className="p-4 rounded-2xl border bg-white shadow-sm">
-                  <div className="mb-3">
-                    <h3 className="text-base font-semibold">Mapeamento de colunas</h3>
-                    <p className="text-sm text-gray-600">Confirme o que é Título, Prazo, Complexidade e Status.</p>
-                  </div>
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <Field label="Título da tarefa" value={mapping.title} onChange={(v)=>setMapping({...mapping, title:v})} options={headers} />
-                    <Field label="Prazo (data)" value={mapping.due} onChange={(v)=>setMapping({...mapping, due:v})} options={headers} />
-                    <Field label="Complexidade (1–5)" value={mapping.complexity} onChange={(v)=>setMapping({...mapping, complexity:v})} options={headers} />
-                    <Field label="Status (opcional)" value={mapping.status} onChange={(v)=>setMapping({...mapping, status:v})} options={["", ...headers]} />
-                  </div>
-                </div>
-              )}
+      let rows = [];
 
-              <div className="p-4 rounded-2xl border bg-white shadow-sm">
-                <div className="mb-3">
-                  <h3 className="text-base font-semibold">Pesos da priorização</h3>
-                  <p className="text-sm text-gray-600">Ajuste a importância de prazo x complexidade.</p>
-                </div>
-                <div className="grid md:grid-cols-2 gap-4 items-center">
-                  <div>
-                    <label className="text-sm">Peso do Prazo: <b>{weights.prazo.toFixed(2)}</b></label>
-                    <input type="range" min="0" max="1" step="0.05" value={weights.prazo} onChange={(e)=>{
-                      const v = parseFloat(e.target.value);
-                      setWeights({ prazo: v, complexidade: 1 - v });
-                    }} className="w-full" />
-                    <div className="text-xs text-gray-500">O peso de Complexidade fica {weights.complexidade.toFixed(2)} (total = 1).</div>
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    Regra padrão:
-                    <ul className="list-disc ml-5 mt-1">
-                      <li>Vencido/hoje = urgência máxima.</li>
-                      <li>≤3 dias: muito urgente; ≤7: alta; ≤14: média; ≤30: baixa; &gt;30: muito baixa.</li>
-                      <li>Complexidade normalizada de 1 a 5.</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl border bg-white shadow-sm">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold">Prioridades</h3>
-                    <p className="text-sm text-gray-600">{prioritized.length ? `${prioritized.length} tarefas ordenadas do mais urgente para o menos` : "Carregue dados acima para ver a lista"}</p>
-                  </div>
-                  {prioritized.length>0 && (
-                    <button onClick={downloadCSV} className="px-3 py-2 rounded-lg border text-sm">Baixar CSV priorizado</button>
-                  )}
-                </div>
-                <ul className="space-y-2">
-                  {prioritized.map((r, idx) => (
-                    <li key={idx} className="p-3 rounded-xl border bg-white flex items-center gap-3">
-                      <Badge level={r.label} />
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">{r.title}</div>
-                        <div className="text-xs text-gray-500">
-                          Prazo: {r.due ? r.due.toLocaleDateString() : (r.dueStr || "—")} • {r.daysLeft==null? "dias restantes: ?" : r.daysLeft===0? "vence hoje" : r.daysLeft<0? `${Math.abs(r.daysLeft)} dia(s) em atraso` : `faltam ${r.daysLeft} dia(s)`} • Complexidade: {r.comp || "?"}
-                        </div>
-                        {r.status && <div className="text-xs text-gray-400">Status: {r.status}</div>}
-                      </div>
-                      <div className="text-xs text-gray-500">Score {r.score.toFixed(2)}</div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </main>
-
-            <footer className="border-t">
-              <div className="max-w-6xl mx-auto px-4 py-6 text-xs text-gray-500 flex items-center justify-between">
-                <span>© {new Date().getFullYear()} Workflow Priorizer</span>
-                <span>Privado: os dados não saem do seu navegador</span>
-              </div>
-            </footer>
-          </div>
-        );
+      // Se colou no textarea
+      const pasted = document.getElementById("pasteData").value;
+      if (pasted.trim()) {
+        rows = parseCSV(pasted);
       }
 
-      const root = ReactDOM.createRoot(document.getElementById("root"));
-      root.render(<App />);
-    </script>
-  </body>
+      // Se fez upload CSV
+      const fileInput = document.getElementById("csvInput");
+      if (fileInput.files.length > 0) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          rows = parseCSV(e.target.result);
+          renderRows(rows);
+        }
+        reader.readAsText(fileInput.files[0]);
+        return;
+      }
+
+      renderRows(rows);
+    }
+
+    function renderRows(rows) {
+      const tableBody = document.querySelector("#resultTable tbody");
+      tableBody.innerHTML = "";
+
+      rows.forEach(r => {
+        if (r.length < 3) return;
+        const [tarefa, prazo, complexidade] = r;
+        const prioridade = calcularPrioridade(prazo, complexidade);
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${tarefa}</td>
+          <td>${prazo}</td>
+          <td>${complexidade}</td>
+          <td class="${prioridade.toLowerCase()}">${prioridade}</td>
+        `;
+        tableBody.appendChild(tr);
+      });
+    }
+  </script>
+</body>
 </html>
