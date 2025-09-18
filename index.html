@@ -3,117 +3,370 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Priorizador de Fluxo de Trabalho</title>
+  <title>Priorizador de Fluxo de Trabalho — Avançado</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background: #f9f9f9; }
-    h1 { color: #333; }
-    .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    input, button, textarea { margin: 10px 0; padding: 8px; width: 100%; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-    th { background: #f0f0f0; }
-    .high { background: #ffcccc; }
-    .medium { background: #fff3cd; }
-    .low { background: #d4edda; }
+    body { font-family: system-ui, -apple-system, Arial, sans-serif; margin: 24px; background: #f6f7f9; color:#222;}
+    h1 { margin: 0 0 8px; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px; box-shadow:0 2px 12px rgba(0,0,0,.04); margin-bottom:16px;}
+    .grid { display:grid; gap:12px; }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    input[type="file"], input[type="text"], textarea, select { width:100%; padding:10px 12px; border-radius:10px; border:1px solid #d1d5db; background:#fff; }
+    button { padding:10px 14px; border-radius:10px; border:1px solid #d1d5db; background:#111; color:#fff; cursor:pointer; }
+    button.secondary { background:#fff; color:#111; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding:10px 12px; border-bottom:1px solid #eee; text-align:left; }
+    th { background:#fafafa; position:sticky; top:0; }
+    .badge { padding:4px 8px; border-radius:999px; font-size:12px; color:#fff; display:inline-block; }
+    .crit { background:#dc2626; }
+    .high { background:#f97316; }
+    .med { background:#f59e0b; color:#111; }
+    .low { background:#9ca3af; }
+    .muted { color:#6b7280; font-size:12px;}
+    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap;}
+    .w-200 { width:200px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>📊 Priorizar Tarefas</h1>
-    <p>Cole dados do Google Sheets ou faça upload de um arquivo CSV.</p>
-
-    <label for="csvInput">Upload CSV:</label>
-    <input type="file" id="csvInput" accept=".csv" />
-
-    <label for="pasteData">Ou cole os dados aqui (colunas: Tarefa, Prazo, Complexidade):</label>
-    <textarea id="pasteData" rows="6" placeholder="Exemplo:
-Tarefa A,2025-09-20,Alta
-Tarefa B,2025-09-25,Média
-Tarefa C,2025-10-01,Baixa"></textarea>
-
-    <button onclick="processData()">Processar</button>
-
-    <table id="resultTable">
-      <thead>
-        <tr>
-          <th>Tarefa</th>
-          <th>Prazo</th>
-          <th>Complexidade</th>
-          <th>Prioridade</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+  <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+    <div>
+      <h1>📊 Priorizador de Tarefas</h1>
+      <div class="muted">Cole/importe sua planilha e gere uma lista ordenada por <b>prazo</b> e <b>complexidade</b>.</div>
+    </div>
+    <div class="muted">100% no seu navegador</div>
   </div>
 
-  <script>
-    function parseCSV(text) {
-      return text.trim().split("\n").map(line => line.split(","));
+  <div class="card">
+    <div class="grid grid-3">
+      <div>
+        <div class="muted">Upload CSV</div>
+        <input id="csvFile" type="file" accept=".csv,text/csv" />
+      </div>
+      <div>
+        <div class="muted">Ou link CSV público (Google Sheets → Publicar na web → CSV)</div>
+        <div class="row">
+          <input id="csvUrl" type="text" placeholder="https://docs.google.com/spreadsheets/.../export?format=csv" />
+          <button id="btnFetch" class="secondary">Carregar</button>
+        </div>
+      </div>
+      <div>
+        <div class="muted">Ou cole aqui (aceita vírgula ; ponto e vírgula ; tab)</div>
+        <textarea id="paste" rows="3" placeholder="Tarefa, Prazo, Complexidade&#10;Apresentação, 05/09, Alta"></textarea>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <button id="btnProcess">Processar</button>
+      <button id="btnDownload" class="secondary" disabled>Baixar CSV priorizado</button>
+    </div>
+  </div>
+
+  <div class="card" id="mapBox" style="display:none;">
+    <div class="row">
+      <div class="muted">Mapeamento de colunas:</div>
+      <select id="selTitle" class="w-200"></select>
+      <select id="selDue" class="w-200"></select>
+      <select id="selComplex" class="w-200"></select>
+      <select id="selStatus" class="w-200"></select>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <div class="muted">Pesos → Prazo: <b id="wDue">0.6</b> • Complexidade: <b id="wCx">0.4</b></div>
+      <input id="rngWeight" type="range" min="0" max="1" step="0.05" value="0.6" style="width:240px" />
+    </div>
+  </div>
+
+  <div class="card" id="listBox" style="display:none;">
+    <div class="row" style="justify-content:space-between;">
+      <div>
+        <b id="countInfo">0 tarefas</b>
+        <span class="muted" id="ruleInfo">Ordenado por prazo e complexidade</span>
+      </div>
+      <div class="row">
+        <select id="filterLevel" class="w-200">
+          <option value="">Filtrar por prioridade</option>
+          <option value="Crítica">Crítica</option>
+          <option value="Alta">Alta</option>
+          <option value="Média">Média</option>
+          <option value="Baixa">Baixa</option>
+        </select>
+      </div>
+    </div>
+    <div style="max-height: 55vh; overflow:auto; margin-top:8px;">
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th style="width:120px;">Prioridade</th>
+            <th style="width:100px;">Score</th>
+            <th style="width:120px;">Prazo</th>
+            <th style="width:120px;">Dias</th>
+            <th style="width:140px;">Complexidade</th>
+            <th>Tarefa</th>
+            <th style="width:160px;">Status</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+// ---------- Utilidades ----------
+const $ = (sel) => document.querySelector(sel);
+
+function guessSep(line) {
+  const counts = { ",": (line.match(/,/g)||[]).length, ";": (line.match(/;/g)||[]).length, "\\t": (line.match(/\\t/g)||[]).length };
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0] || ",";
+}
+
+function parseCSV(text) {
+  text = text.replace(/\\r/g,"").trim();
+  const first = text.split("\\n")[0] || "";
+  const sep = guessSep(first);
+  const rows = [];
+  let row = [], cur = "", inQ = false;
+  for (let i=0; i<text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') { inQ = !inQ; continue; }
+    if (ch === sep && !inQ) { row.push(cur); cur=""; continue; }
+    if (ch === "\\n" && !inQ) { row.push(cur); rows.push(row); row=[]; cur=""; continue; }
+    cur += ch;
+  }
+  if (cur.length || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+
+function toNumber(val) {
+  if (val == null) return 0;
+  const s = String(val).trim();
+  if (!s) return 0;
+  const map = { "muito alta":5, "alta":4, "media":3, "média":3, "baixa":2, "muito baixa":1 };
+  const key = s.toLowerCase();
+  if (map[key] != null) return map[key];
+  const n = parseFloat(s.replace(",", "."));
+  return isNaN(n) ? 0 : n;
+}
+
+function parseDateSmart(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  let m = s.match(/^([0-3]?\\d)[\\/-]([0-1]?\\d)[\\/-](\\d{2,4})$/);
+  if (m) {
+    const d = parseInt(m[1]); const mo = parseInt(m[2])-1; let y = parseInt(m[3]);
+    if (y < 100) y = 2000 + y;
+    return new Date(y, mo, d);
+  }
+  m = s.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  if (m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
+  if (/^\\d+(\\.\\d+)?$/.test(s)) {
+    const serial = parseFloat(s);
+    const excelEpoch = new Date(1899, 11, 30);
+    return new Date(excelEpoch.getTime() + serial * 86400000);
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function fmtDate(d, fallback="") {
+  if (!d) return fallback;
+  const dd = String(d.getDate()).padStart(2,"0");
+  const mm = String(d.getMonth()+1).padStart(2,"0");
+  const yy = d.getFullYear();
+  return `${dd}/${mm}/${yy}`;
+}
+
+// ---------- Estado ----------
+let headers = [];
+let rows = [];
+let mapping = { title:"", due:"", cx:"", status:"" };
+let weights = { due: 0.6, cx: 0.4 };
+
+// ---------- Entrada ----------
+document.getElementById("btnFetch").onclick = async () => {
+  const url = document.getElementById("csvUrl").value.trim();
+  if (!url) return alert("Cole um link CSV público do Google Sheets.");
+  const res = await fetch(url);
+  const text = await res.text();
+  handleRaw(text);
+};
+
+document.getElementById("csvFile").onchange = (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => handleRaw(String(ev.target.result||""));
+  reader.readAsText(f);
+};
+
+document.getElementById("btnProcess").onclick = () => {
+  const pasted = document.getElementById("paste").value.trim();
+  if (!pasted) return alert("Cole dados ou envie um CSV.");
+  handleRaw(pasted);
+};
+
+function handleRaw(text) {
+  const arr = parseCSV(text);
+  if (!arr.length) return;
+  headers = arr[0].map(h=>String(h).trim());
+  const dataRows = arr.slice(1).filter(r=>r.some(c=>String(c).trim() !== ""));
+  rows = dataRows.map(r => {
+    const o = {};
+    headers.forEach((h,i)=> o[h] = (r[i] ?? "").trim());
+    return o;
+  });
+  suggestMapping();
+  renderMapping();
+  computeAndRender();
+}
+
+// ---------- Mapeamento ----------
+function suggestMapping() {
+  const lower = headers.map(h=>h.toLowerCase());
+  const find = (...keys) => {
+    for (const k of keys) {
+      const i = lower.findIndex(h => h.includes(k));
+      if (i !== -1) return headers[i];
     }
+    return "";
+  };
+  mapping.title = find("tarefa","atividade","assunto","descricao","descrição","title","nome");
+  mapping.due = find("prazo","data","venc","entrega","deadline","due");
+  mapping.cx = find("complex","dific","peso","score","pontos","nivel","nível");
+  mapping.status = find("status","situação","situacao","andamento","feito","done");
+}
 
-    function calcularPrioridade(prazo, complexidade) {
-      const hoje = new Date();
-      const prazoDate = new Date(prazo);
-      const diasRestantes = Math.ceil((prazoDate - hoje) / (1000*60*60*24));
+function renderMapping() {
+  document.getElementById("mapBox").style.display = "block";
+  const setSel = (id, val, opts, prependEmpty=false) => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = (prependEmpty ? `<option value="">(Sem)</option>` : "") +
+      opts.map(h=>`<option ${h===val?"selected":""}>${h}</option>`).join("");
+  };
+  setSel("selTitle", mapping.title, headers);
+  setSel("selDue", mapping.due, headers);
+  setSel("selComplex", mapping.cx, headers);
+  setSel("selStatus", mapping.status || "", headers, true);
 
-      let score = 0;
-      if (diasRestantes <= 3) score += 2;
-      else if (diasRestantes <= 7) score += 1;
+  ["selTitle","selDue","selComplex","selStatus"].forEach(id => {
+    document.getElementById(id).onchange = () => {
+      mapping.title = document.getElementById("selTitle").value;
+      mapping.due = document.getElementById("selDue").value;
+      mapping.cx = document.getElementById("selComplex").value;
+      mapping.status = document.getElementById("selStatus").value || "";
+      computeAndRender();
+    };
+  });
 
-      if (complexidade.toLowerCase().includes("alta")) score += 2;
-      else if (complexidade.toLowerCase().includes("média")) score += 1;
+  document.getElementById("rngWeight").oninput = (e)=>{
+    const v = parseFloat(e.target.value);
+    weights.due = v; weights.cx = 1 - v;
+    document.getElementById("wDue").textContent = v.toFixed(2);
+    document.getElementById("wCx").textContent = (1-v).toFixed(2);
+    computeAndRender();
+  };
+}
 
-      if (score >= 3) return "Alta";
-      if (score == 2) return "Média";
-      return "Baixa";
+// ---------- Cálculo ----------
+function urgencyFromDays(days) {
+  if (days == null) return 0.2;
+  if (days <= 0) return 1;
+  if (days <= 3) return 0.85;
+  if (days <= 7) return 0.65;
+  if (days <= 14) return 0.45;
+  if (days <= 30) return 0.25;
+  return 0.1;
+}
+function labelFromScore(s){
+  if (s >= 0.75) return "Crítica";
+  if (s >= 0.55) return "Alta";
+  if (s >= 0.35) return "Média";
+  return "Baixa";
+}
+
+function compute() {
+  const out = [];
+  const today = new Date(); today.setHours(0,0,0,0);
+  rows.forEach(r => {
+    const title = r[mapping.title] || "(sem título)";
+    const dueStr = r[mapping.due] || "";
+    const cxStr = r[mapping.cx] || "";
+    const status = mapping.status ? (r[mapping.status] || "") : "";
+
+    const due = parseDateSmart(dueStr);
+    const days = due ? Math.ceil((due - today)/86400000) : null;
+
+    let cx = toNumber(cxStr);
+    if (cx <= 1) {
+      const s = cxStr.toLowerCase();
+      if (s.includes("alta")) cx = 4;
+      else if (s.includes("méd") || s.includes("med")) cx = 3;
+      else if (s.includes("baixa")) cx = 2;
     }
+    cx = Math.max(1, Math.min(5, cx || 2));
+    const cxNorm = (cx - 1) / 4;
 
-    function processData() {
-      const tableBody = document.querySelector("#resultTable tbody");
-      tableBody.innerHTML = "";
+    const urg = urgencyFromDays(days);
+    const score = weights.due * urg + weights.cx * cxNorm;
+    const label = labelFromScore(score);
 
-      let rows = [];
+    out.push({ title, due, dueStr, days, cx, status, score, label });
+  });
+  out.sort((a,b)=> b.score - a.score);
+  return out;
+}
 
-      // Se colou no textarea
-      const pasted = document.getElementById("pasteData").value;
-      if (pasted.trim()) {
-        rows = parseCSV(pasted);
-      }
+function computeAndRender() {
+  const result = compute();
+  renderTable(result);
+  document.getElementById("btnDownload").disabled = result.length === 0;
+}
 
-      // Se fez upload CSV
-      const fileInput = document.getElementById("csvInput");
-      if (fileInput.files.length > 0) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          rows = parseCSV(e.target.result);
-          renderRows(rows);
-        }
-        reader.readAsText(fileInput.files[0]);
-        return;
-      }
+function renderTable(list) {
+  const levelFilter = document.getElementById("filterLevel").value;
+  const tbody = document.querySelector("#tbl tbody");
+  tbody.innerHTML = "";
+  const filtered = levelFilter ? list.filter(r=>r.label===levelFilter) : list;
+  document.getElementById("countInfo").textContent = `${filtered.length} tarefas`;
 
-      renderRows(rows);
-    }
+  filtered.forEach(r => {
+    const tr = document.createElement("tr");
+    const badge = r.label==="Crítica" ? "badge crit" : r.label==="Alta" ? "badge high" : r.label==="Média" ? "badge med" : "badge low";
+    tr.innerHTML = `
+      <td><span class="${badge}">${r.label}</span></td>
+      <td>${r.score.toFixed(2)}</td>
+      <td>${r.due ? fmtDate(r.due) : (r.dueStr || "—")}</td>
+      <td>${r.days==null ? "?" : (r.days===0 ? "hoje" : (r.days<0 ? \`${"${Math.abs(r.days)}"} atr.\` : \`${"${r.days}"}\`))}</td>
+      <td>${r.cx}</td>
+      <td>${escapeHtml(r.title)}</td>
+      <td>${escapeHtml(r.status||"")}</td>
+    `;
+    tbody.appendChild(tr);
+  });
 
-    function renderRows(rows) {
-      const tableBody = document.querySelector("#resultTable tbody");
-      tableBody.innerHTML = "";
+  document.getElementById("listBox").style.display = filtered.length ? "block" : "none";
+}
 
-      rows.forEach(r => {
-        if (r.length < 3) return;
-        const [tarefa, prazo, complexidade] = r;
-        const prioridade = calcularPrioridade(prazo, complexidade);
+document.getElementById("filterLevel").onchange = ()=> computeAndRender();
 
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${tarefa}</td>
-          <td>${prazo}</td>
-          <td>${complexidade}</td>
-          <td class="${prioridade.toLowerCase()}">${prioridade}</td>
-        `;
-        tableBody.appendChild(tr);
-      });
-    }
-  </script>
+// ---------- Export ----------
+document.getElementById("btnDownload").onclick = () => {
+  const list = compute();
+  const cols = ["Prioridade","Score","Dias","Prazo","Complexidade","Tarefa", ...(mapping.status?["Status"]:[])];
+  const lines = [cols.join(",")];
+  list.forEach(r => {
+    const row = [
+      r.label, r.score.toFixed(2), r.days ?? "", r.due ? fmtDate(r.due) : r.dueStr, r.cx,
+      `"${String(r.title).replace(/"/g,'""')}"`,
+      ...(mapping.status ? [`"${String(r.status).replace(/"/g,'""')}"`] : [])
+    ];
+    lines.push(row.join(","));
+  });
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "prioridades.csv";
+  a.click();
+};
+
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+</script>
 </body>
 </html>
